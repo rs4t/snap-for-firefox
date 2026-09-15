@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="card">
+      <div class="header">
+        <img class="logo" src="icons/icon.svg" alt="" />
+        <span class="title">Snap for Firefox</span>
+      </div>
+
+      <div class="row">
+        <div class="row-icon">
+          <!-- shield-tick, iconsax-style linear icon -->
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2.9 5 5.6v5.6c0 5 3.4 8.3 7 9.9 3.6-1.6 7-4.9 7-9.9V5.6L12 2.9Z"
+              stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            <path d="M9 12.3l2.1 2.1L15.3 10" stroke="currentColor" stroke-width="1.5"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <div class="label">
+          <span id="status-text">Off</span>
+          <span class="sub">Spoofs Chrome on snapchat.com</span>
+        </div>
+        <button id="toggle" class="switch" role="switch" aria-checked="false">
+          <span class="knob"></span>
+        </button>
+      </div>
+
+      <div class="detail">
+        <!-- globe, iconsax-style linear icon -->
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" />
+          <path d="M3 12h18M12 3c2.4 2.4 3.8 5.7 3.8 9s-1.4 6.6-3.8 9c-2.4-2.4-3.8-5.7-3.8-9s1.4-6.6 3.8-9Z"
+            stroke="currentColor" stroke-width="1.5" />
+        </svg>
+        <span>Chrome 128 · Windows</span>
+      </div>
+
+      <button id="reload-btn" class="reload" hidden>
+        <!-- refresh-2, iconsax-style linear icon -->
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 12a8 8 0 0 1 14.6-4.5M20 12a8 8 0 0 1-14.6 4.5"
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <path d="M18.5 3v5h-5M5.5 21v-5h5" stroke="currentColor" stroke-width="1.5"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Reload Snapchat tab
+      </button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

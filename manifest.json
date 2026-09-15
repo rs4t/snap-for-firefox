@@ -1,0 +1,35 @@
+{
+  "manifest_version": 2,
+  "name": "Snap for Firefox",
+  "version": "1.0.0",
+  "description": "Lets Snapchat Web work in Firefox by spoofing the User-Agent on snapchat.com.",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "webNavigation",
+    "storage",
+    "*://*.snapchat.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon.svg",
+      "96": "icons/icon.svg"
+    },
+    "default_title": "Snap for Firefox"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "snap-for-firefox@local",
+      "strict_min_version": "78.0"
+    }
+  }
+}
