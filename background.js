@@ -160,18 +160,26 @@ browser.webNavigation.onCommitted.addListener((details) => {
   if (!enabled) return;
   if (!SNAPCHAT_URL_RE.test(details.url)) return;
 
-  browser.tabs.executeScript(details.tabId, {
-    frameId: details.frameId,
-    runAt: "document_start",
-    code: buildPatchCode()
-  }).catch(() => {});
+  console.log("[SFF] onCommitted fired for", details.url, "frame", details.frameId);
 
-  if (details.frameId === 0) {
-    browser.tabs.executeScript(details.tabId, {
+  browser.tabs
+    .executeScript(details.tabId, {
       frameId: details.frameId,
       runAt: "document_start",
-      code: showToastCode()
-    }).catch(() => {});
+      code: buildPatchCode()
+    })
+    .then(() => console.log("[SFF] navigator patch injected, frame", details.frameId))
+    .catch((e) => console.error("[SFF] navigator patch injection FAILED, frame", details.frameId, e));
+
+  if (details.frameId === 0) {
+    browser.tabs
+      .executeScript(details.tabId, {
+        frameId: details.frameId,
+        runAt: "document_start",
+        code: showToastCode()
+      })
+      .then(() => console.log("[SFF] toast script injected"))
+      .catch((e) => console.error("[SFF] toast injection FAILED", e));
   }
 });
 
