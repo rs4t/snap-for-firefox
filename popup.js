@@ -1,6 +1,5 @@
 const toggle = document.getElementById("toggle");
 const statusText = document.getElementById("status-text");
-const reloadBtn = document.getElementById("reload-btn");
 const openBtn = document.getElementById("open-btn");
 
 function render(enabled) {
@@ -13,9 +12,8 @@ async function getSnapchatTab() {
   return tab && tab.url && SNAPCHAT_URL_RE.test(tab.url) ? tab : null;
 }
 
-async function refreshButtons() {
+async function refreshOpenButton() {
   const tab = await getSnapchatTab();
-  reloadBtn.hidden = !tab;
   openBtn.hidden = !!tab;
 }
 
@@ -23,20 +21,14 @@ browser.storage.local.get("enabled").then((res) => {
   render(!!res.enabled);
 });
 
-refreshButtons();
+refreshOpenButton();
 
 toggle.addEventListener("click", async () => {
   const next = toggle.getAttribute("aria-checked") !== "true";
   await browser.storage.local.set({ enabled: next });
   render(next);
 
-  // Apply immediately: toggling only takes effect after a hard reload, so do
-  // it right away instead of making the user click Reload separately.
-  const tab = await getSnapchatTab();
-  if (tab) browser.tabs.reload(tab.id, { bypassCache: true });
-});
-
-reloadBtn.addEventListener("click", async () => {
+  // Apply immediately: toggling only takes effect after a hard reload.
   const tab = await getSnapchatTab();
   if (tab) browser.tabs.reload(tab.id, { bypassCache: true });
 });
