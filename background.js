@@ -8,13 +8,23 @@ const TARGET_PATTERN = "*://*.snapchat.com/*";
 
 let enabled = false;
 
+function updateBadge() {
+  browser.browserAction.setBadgeText({ text: enabled ? "ON" : "" });
+  browser.browserAction.setBadgeBackgroundColor({ color: "#17c964" });
+  browser.browserAction.setTitle({
+    title: enabled ? "Snap for Firefox — spoofing ON" : "Snap for Firefox — spoofing OFF"
+  });
+}
+
 browser.storage.local.get("enabled").then((res) => {
   enabled = !!res.enabled;
+  updateBadge();
 });
 
 browser.storage.onChanged.addListener((changes) => {
   if ("enabled" in changes) {
     enabled = !!changes.enabled.newValue;
+    updateBadge();
   }
 });
 
@@ -100,11 +110,9 @@ function buildInjectedCode() {
   })();`;
 }
 
-const isSnapchatUrl = (url) => /^https?:\/\/([^/]*\.)?snapchat\.com\//.test(url);
-
 browser.webNavigation.onCommitted.addListener((details) => {
   if (!enabled) return;
-  if (!isSnapchatUrl(details.url)) return;
+  if (!SNAPCHAT_URL_RE.test(details.url)) return;
 
   browser.tabs.executeScript(details.tabId, {
     frameId: details.frameId,
@@ -127,7 +135,7 @@ const retriedTabs = new Set();
 browser.webNavigation.onCompleted.addListener(async (details) => {
   if (!enabled) return;
   if (details.frameId !== 0) return;
-  if (!isSnapchatUrl(details.url)) return;
+  if (!SNAPCHAT_URL_RE.test(details.url)) return;
 
   if (retriedTabs.has(details.tabId)) {
     retriedTabs.delete(details.tabId);

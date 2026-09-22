@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Snap for Firefox",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lets Snapchat Web work in Firefox by spoofing the User-Agent on snapchat.com.",
   "icons": {
     "48": "icons/icon.svg",
@@ -15,7 +15,7 @@
     "*://*.snapchat.com/*"
   ],
   "background": {
-    "scripts": ["background.js"],
+    "scripts": ["shared.js", "background.js"],
     "persistent": true
   },
   "browser_action": {
