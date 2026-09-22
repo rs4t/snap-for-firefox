@@ -7,6 +7,7 @@ const SEC_CH_UA_MOBILE = "?0";
 const TARGET_PATTERN = "*://*.snapchat.com/*";
 
 let enabled = false;
+console.log("[SFF] background script loaded");
 
 function updateBadge() {
   browser.browserAction.setBadgeText({ text: enabled ? "ON" : "" });
@@ -18,12 +19,14 @@ function updateBadge() {
 
 browser.storage.local.get("enabled").then((res) => {
   enabled = !!res.enabled;
+  console.log("[SFF] initial enabled state:", enabled);
   updateBadge();
 });
 
 browser.storage.onChanged.addListener((changes) => {
   if ("enabled" in changes) {
     enabled = !!changes.enabled.newValue;
+    console.log("[SFF] enabled changed to:", enabled);
     updateBadge();
   }
 });
