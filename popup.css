@@ -190,18 +190,18 @@ body {
   transform: translateY(0) scale(0.98);
 }
 
-#open-btn {
+.btn-outline {
   background: transparent;
   color: #fffc00;
   border: 1px solid rgba(255, 252, 0, 0.35);
 }
 
-#open-btn:hover {
+.btn-outline:hover {
   background: rgba(255, 252, 0, 0.08);
   box-shadow: none;
 }
 
-#open-btn:hover svg {
+.btn-outline:hover svg {
   transform: translate(2px, -2px);
 }
 

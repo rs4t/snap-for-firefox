@@ -57,57 +57,69 @@ browser.webRequest.onBeforeSendHeaders.addListener(
 );
 
 // JS-side spoofing: navigator.userAgent/platform/vendor AND navigator.userAgentData
-// (the Client Hints API only Chromium exposes). Everything needed is inlined into
-// the injected string synchronously (no async storage lookups inside the page
-// script), so it runs at document_start before the page's own scripts can read it.
-function buildInjectedCode() {
+// (the Client Hints API only Chromium exposes). This runs as content-script code
+// directly (NOT injected as a page <script> tag), using Firefox's
+// window.wrappedJSObject + exportFunction/cloneInto to patch the real page-world
+// Navigator from the isolated world. A <script> tag would be subject to the page's
+// CSP and silently get blocked on a site with a strict script-src; this technique
+// isn't, since nothing is ever parsed as inline page script.
+function buildPatchCode() {
   return `(function () {
-    const ua = ${JSON.stringify(CHROME_UA)};
-    const props = {
-      userAgent: ua,
-      appVersion: ua.replace(/^Mozilla\\//, ""),
-      vendor: "Google Inc.",
-      platform: "Win32"
-    };
-    for (const [key, value] of Object.entries(props)) {
-      try {
-        Object.defineProperty(Navigator.prototype, key, {
-          get: () => value,
-          configurable: true
-        });
-      } catch (e) {}
-    }
+    try {
+      const ua = ${JSON.stringify(CHROME_UA)};
+      const win = window.wrappedJSObject;
+      const navProto = win.Navigator.prototype;
+      const props = {
+        userAgent: ua,
+        appVersion: ua.replace(/^Mozilla\\//, ""),
+        vendor: "Google Inc.",
+        platform: "Win32"
+      };
+      for (const [key, value] of Object.entries(props)) {
+        try {
+          Object.defineProperty(navProto, key, {
+            get: exportFunction(function () { return value; }, win),
+            configurable: true
+          });
+        } catch (e) {}
+      }
 
-    class NavigatorUAData {
-      brands = [
+      const brandsData = [
         { brand: "Google Chrome", version: ${JSON.stringify(UA_VERSION)} },
         { brand: "Chromium", version: ${JSON.stringify(UA_VERSION)} },
         { brand: "Not=A?Brand", version: "24" }
       ];
-      mobile = false;
-      platform = "Windows";
-      toJSON() {
-        return { brands: this.brands, mobile: this.mobile, platform: this.platform };
-      }
-      getHighEntropyValues(hints) {
-        const r = this.toJSON();
-        if (!Array.isArray(hints)) return Promise.reject(new TypeError("hints must be an array"));
-        if (hints.includes("architecture")) r.architecture = "x86";
-        if (hints.includes("bitness")) r.bitness = "64";
-        if (hints.includes("model")) r.model = "";
-        if (hints.includes("platformVersion")) r.platformVersion = "10.0.0";
-        if (hints.includes("uaFullVersion")) r.uaFullVersion = "${UA_VERSION}.0.0.0";
-        if (hints.includes("fullVersionList")) r.fullVersionList = this.brands;
-        return Promise.resolve(r);
-      }
-    }
-    try {
-      Object.defineProperty(Navigator.prototype, "userAgentData", {
-        get: () => new NavigatorUAData(),
-        configurable: true
-      });
-    } catch (e) {}
 
+      try {
+        const uaData = cloneInto({ brands: brandsData, mobile: false, platform: "Windows" }, win);
+        uaData.toJSON = exportFunction(function () {
+          return cloneInto({ brands: brandsData, mobile: false, platform: "Windows" }, win);
+        }, win);
+        uaData.getHighEntropyValues = exportFunction(function (hints) {
+          if (!Array.isArray(hints)) return win.Promise.reject(new win.TypeError("hints must be an array"));
+          const r = { brands: brandsData, mobile: false, platform: "Windows" };
+          if (hints.includes("architecture")) r.architecture = "x86";
+          if (hints.includes("bitness")) r.bitness = "64";
+          if (hints.includes("model")) r.model = "";
+          if (hints.includes("platformVersion")) r.platformVersion = "10.0.0";
+          if (hints.includes("uaFullVersion")) r.uaFullVersion = "${UA_VERSION}.0.0.0";
+          if (hints.includes("fullVersionList")) r.fullVersionList = brandsData;
+          return win.Promise.resolve(cloneInto(r, win));
+        }, win);
+
+        Object.defineProperty(navProto, "userAgentData", {
+          get: exportFunction(function () { return uaData; }, win),
+          configurable: true
+        });
+      } catch (e) {}
+    } catch (e) {}
+  })();`;
+}
+
+// Small on-page toast confirming spoofing is active. Plain content-script DOM
+// manipulation (no <script> tag), so it's unaffected by page CSP either way.
+function showToastCode() {
+  return `(function () {
     function showToast() {
       const toast = document.createElement("div");
       toast.textContent = "Snap for Firefox — spoofing Chrome";
@@ -151,13 +163,16 @@ browser.webNavigation.onCommitted.addListener((details) => {
   browser.tabs.executeScript(details.tabId, {
     frameId: details.frameId,
     runAt: "document_start",
-    code: `{
-      const script = document.createElement("script");
-      script.textContent = ${JSON.stringify(buildInjectedCode())};
-      (document.head || document.documentElement).appendChild(script);
-      script.remove();
-    }`
+    code: buildPatchCode()
   }).catch(() => {});
+
+  if (details.frameId === 0) {
+    browser.tabs.executeScript(details.tabId, {
+      frameId: details.frameId,
+      runAt: "document_start",
+      code: showToastCode()
+    }).catch(() => {});
+  }
 });
 
 // Snapchat sometimes serves a stale cached "Browser not supported" response
