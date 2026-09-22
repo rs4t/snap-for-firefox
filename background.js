@@ -17,20 +17,6 @@ function updateBadge() {
   });
 }
 
-browser.storage.local.get("enabled").then((res) => {
-  enabled = !!res.enabled;
-  console.log("[SFF] initial enabled state:", enabled);
-  updateBadge();
-});
-
-browser.storage.onChanged.addListener((changes) => {
-  if ("enabled" in changes) {
-    enabled = !!changes.enabled.newValue;
-    console.log("[SFF] enabled changed to:", enabled);
-    updateBadge();
-  }
-});
-
 // Rewrite the User-Agent header and add the Chrome Client-Hint headers
 // (Sec-CH-UA / Sec-CH-UA-Mobile / Sec-CH-UA-Platform) that Firefox never
 // sends on its own. Snapchat checks for these, so without them the UA
@@ -59,130 +45,67 @@ browser.webRequest.onBeforeSendHeaders.addListener(
   ["blocking", "requestHeaders"]
 );
 
-// JS-side spoofing: navigator.userAgent/platform/vendor AND navigator.userAgentData
-// (the Client Hints API only Chromium exposes). This runs as content-script code
-// directly (NOT injected as a page <script> tag), using Firefox's
-// window.wrappedJSObject + exportFunction/cloneInto to patch the real page-world
-// Navigator from the isolated world. A <script> tag would be subject to the page's
-// CSP and silently get blocked on a site with a strict script-src; this technique
-// isn't, since nothing is ever parsed as inline page script.
-function buildPatchCode() {
-  return `(function () {
-    try {
-      const ua = ${JSON.stringify(CHROME_UA)};
-      const win = window.wrappedJSObject;
-      const navProto = win.Navigator.prototype;
-      const props = {
-        userAgent: ua,
-        appVersion: ua.replace(/^Mozilla\\//, ""),
-        vendor: "Google Inc.",
-        platform: "Win32"
-      };
-      for (const [key, value] of Object.entries(props)) {
-        try {
-          Object.defineProperty(navProto, key, {
-            get: exportFunction(function () { return value; }, win),
-            configurable: true
-          });
-        } catch (e) {}
-      }
+// JS-side spoofing: navigator.userAgent/platform/vendor AND navigator.userAgentData,
+// plus a small confirmation toast. Registered as real FILE-based content scripts via
+// browser.contentScripts.register() rather than tabs.executeScript({code: ...}).
+// Firefox's code-string executeScript variant runs through an eval-like path that
+// some sites' CSP silently blocks (it fails with no catchable error); file-based
+// content scripts — declarative or dynamically registered — are documented to be
+// exempt from the page's CSP entirely, which is what patch.js/toast.js rely on.
+let patchRegistration = null;
+let toastRegistration = null;
 
-      const brandsData = [
-        { brand: "Google Chrome", version: ${JSON.stringify(UA_VERSION)} },
-        { brand: "Chromium", version: ${JSON.stringify(UA_VERSION)} },
-        { brand: "Not=A?Brand", version: "24" }
-      ];
-
-      try {
-        const uaData = cloneInto({ brands: brandsData, mobile: false, platform: "Windows" }, win);
-        uaData.toJSON = exportFunction(function () {
-          return cloneInto({ brands: brandsData, mobile: false, platform: "Windows" }, win);
-        }, win);
-        uaData.getHighEntropyValues = exportFunction(function (hints) {
-          if (!Array.isArray(hints)) return win.Promise.reject(new win.TypeError("hints must be an array"));
-          const r = { brands: brandsData, mobile: false, platform: "Windows" };
-          if (hints.includes("architecture")) r.architecture = "x86";
-          if (hints.includes("bitness")) r.bitness = "64";
-          if (hints.includes("model")) r.model = "";
-          if (hints.includes("platformVersion")) r.platformVersion = "10.0.0";
-          if (hints.includes("uaFullVersion")) r.uaFullVersion = "${UA_VERSION}.0.0.0";
-          if (hints.includes("fullVersionList")) r.fullVersionList = brandsData;
-          return win.Promise.resolve(cloneInto(r, win));
-        }, win);
-
-        Object.defineProperty(navProto, "userAgentData", {
-          get: exportFunction(function () { return uaData; }, win),
-          configurable: true
-        });
-      } catch (e) {}
-    } catch (e) {}
-  })();`;
-}
-
-// Small on-page toast confirming spoofing is active. Plain content-script DOM
-// manipulation (no <script> tag), so it's unaffected by page CSP either way.
-function showToastCode() {
-  return `(function () {
-    function showToast() {
-      const toast = document.createElement("div");
-      toast.textContent = "Snap for Firefox — spoofing Chrome";
-      Object.assign(toast.style, {
-        position: "fixed",
-        top: "16px",
-        right: "16px",
-        zIndex: "2147483647",
-        background: "#121214",
-        color: "#fffc00",
-        font: "600 12.5px -apple-system, \\"Segoe UI\\", Roboto, sans-serif",
-        padding: "10px 14px",
-        borderRadius: "9px",
-        boxShadow: "0 6px 20px rgba(0,0,0,0.35)",
-        border: "1px solid rgba(255,252,0,0.25)",
-        opacity: "0",
-        transform: "translateY(-6px)",
-        transition: "opacity 0.2s ease, transform 0.2s ease",
-        pointerEvents: "none"
-      });
-      document.body.appendChild(toast);
-      requestAnimationFrame(() => {
-        toast.style.opacity = "1";
-        toast.style.transform = "translateY(0)";
-      });
-      setTimeout(() => {
-        toast.style.opacity = "0";
-        toast.style.transform = "translateY(-6px)";
-        setTimeout(() => toast.remove(), 250);
-      }, 2600);
-    }
-    if (document.body) showToast();
-    else document.addEventListener("DOMContentLoaded", showToast, { once: true });
-  })();`;
-}
-
-browser.webNavigation.onCommitted.addListener((details) => {
-  if (!enabled) return;
-  if (!SNAPCHAT_URL_RE.test(details.url)) return;
-
-  console.log("[SFF] onCommitted fired for", details.url, "frame", details.frameId);
-
-  browser.tabs
-    .executeScript(details.tabId, {
-      frameId: details.frameId,
+async function registerContentScripts() {
+  if (patchRegistration) return;
+  try {
+    patchRegistration = await browser.contentScripts.register({
+      matches: [TARGET_PATTERN],
+      js: [{ file: "patch.js" }],
       runAt: "document_start",
-      code: buildPatchCode()
-    })
-    .then(() => console.log("[SFF] navigator patch injected, frame", details.frameId))
-    .catch((e) => console.error("[SFF] navigator patch injection FAILED, frame", details.frameId, e));
+      allFrames: true
+    });
+    toastRegistration = await browser.contentScripts.register({
+      matches: [TARGET_PATTERN],
+      js: [{ file: "toast.js" }],
+      runAt: "document_start",
+      allFrames: false
+    });
+    console.log("[SFF] content scripts registered");
+  } catch (e) {
+    console.error("[SFF] contentScripts.register failed", e);
+  }
+}
 
-  if (details.frameId === 0) {
-    browser.tabs
-      .executeScript(details.tabId, {
-        frameId: details.frameId,
-        runAt: "document_start",
-        code: showToastCode()
-      })
-      .then(() => console.log("[SFF] toast script injected"))
-      .catch((e) => console.error("[SFF] toast injection FAILED", e));
+function unregisterContentScripts() {
+  if (patchRegistration) {
+    patchRegistration.unregister();
+    patchRegistration = null;
+  }
+  if (toastRegistration) {
+    toastRegistration.unregister();
+    toastRegistration = null;
+  }
+  console.log("[SFF] content scripts unregistered");
+}
+
+function syncRegistration() {
+  if (enabled) registerContentScripts();
+  else unregisterContentScripts();
+}
+
+browser.storage.local.get("enabled").then((res) => {
+  enabled = !!res.enabled;
+  console.log("[SFF] initial enabled state:", enabled);
+  updateBadge();
+  syncRegistration();
+});
+
+browser.storage.onChanged.addListener((changes) => {
+  if ("enabled" in changes) {
+    enabled = !!changes.enabled.newValue;
+    console.log("[SFF] enabled changed to:", enabled);
+    updateBadge();
+    syncRegistration();
   }
 });
 
