@@ -100,9 +100,11 @@ function buildInjectedCode() {
   })();`;
 }
 
+const isSnapchatUrl = (url) => /^https?:\/\/([^/]*\.)?snapchat\.com\//.test(url);
+
 browser.webNavigation.onCommitted.addListener((details) => {
   if (!enabled) return;
-  if (!/^https?:\/\/([^/]*\.)?snapchat\.com\//.test(details.url)) return;
+  if (!isSnapchatUrl(details.url)) return;
 
   browser.tabs.executeScript(details.tabId, {
     frameId: details.frameId,
@@ -115,3 +117,36 @@ browser.webNavigation.onCommitted.addListener((details) => {
     }`
   }).catch(() => {});
 });
+
+// Snapchat sometimes serves a stale cached "Browser not supported" response
+// (from before spoofing kicked in, or from a session-restored tab) that a
+// normal reload won't fix — only a cache-bypassing reload does. Detect that
+// page after load and self-heal with one bypassCache reload automatically.
+const retriedTabs = new Set();
+
+browser.webNavigation.onCompleted.addListener(async (details) => {
+  if (!enabled) return;
+  if (details.frameId !== 0) return;
+  if (!isSnapchatUrl(details.url)) return;
+
+  if (retriedTabs.has(details.tabId)) {
+    retriedTabs.delete(details.tabId);
+    return;
+  }
+
+  try {
+    const [isUnsupported] = await browser.tabs.executeScript(details.tabId, {
+      frameId: 0,
+      code: "document.body && document.body.innerText.includes('Browser not supported')"
+    });
+
+    if (isUnsupported) {
+      retriedTabs.add(details.tabId);
+      browser.tabs.reload(details.tabId, { bypassCache: true }).catch(() => {
+        retriedTabs.delete(details.tabId);
+      });
+    }
+  } catch (e) {}
+});
+
+browser.tabs.onRemoved.addListener((tabId) => retriedTabs.delete(tabId));
